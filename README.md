@@ -64,29 +64,32 @@ _As a `<role>`, I want `<capability>` so that `<benefit>`._
 
 1. **User Story 1**  
    As a System Administrator, I want to assign roles and permissions to users so that I can control who has access to what data.
-  | S/N   | Sprint backlog                                                            | 
-  |-------|---------------------------------------------------------------------------|
-  | 1.    | Create user groups and roles                                              |
-  | 2.    | Draft the policies for CRUD modification by roles and groups              |
-  | 3.    | HR administrator should have access to CRUD functions to all personal information              |
- 
-3. 
-   As a  
+   
+| S/N   | Sprint backlog                                                            | 
+|-------|---------------------------------------------------------------------------|
+| 1.    | Create user groups and roles                                              |
+| 2.    | Draft the policies for CRUD modification by roles and groups              |
+| 3.    | HR administrator should have access to CRUD functions to all personal information              |
+| 4.    | Operators should have access to Read functions to only their personal information to check if its accurate up to date without accessing others' information      |
+| 5.    | Chief Ops should have access to Read and Update functions to Operators personal information to help ammend when any changes happens |  
+| 6.    | OC should have access to Read and Update functions to t personal information        |  
+| 7.    | CO should have the only access to the CEP and AFR records of all personnel so that he can analysis the man's current standing  within unit.        |  
+| 8.    | CO, OC, Chief Ops and selected appointment holders should have access to all CRUD of BB personnels' IPPT & BMI record so that they can keep track of each individual's results and allow the higher ups to better help individual susceptible to failure in advance.          |
 
-   As a HR administrator, I want to ensure that only the Commanding Officer can access the CEP and AFR records of all personnel so that he has exclusive visibility into these sensitive information.
+---
 
-5. **User Story 3**  
-   As a System Administrator, I want to ensure that only the relevant personal profile so that I can confirm my records are accurate without accessing others’ information.  
+## Epic 5 (Ranking Exercise)
 
-6. **User Story 4**  
-   As a System Administrator, I want inactive accounts to be automatically disabled after a set period so that the system remains secure.
+**User Story 1**
+
+   As CO, I want to have a birds eye view of the entire squadron's performance so that I can better monitor and analysis the man's current standing within unit level and pull up those who needs help in performance  
+
+  | S/N   | Sprint backlog                                                           | 
+  |-------|--------------------------------------------------------------------------|
+  | 1.    | Create an entity/database to store list of personnels' IPPT result, BMI result, AFR, and date taken                 |             
+  | 2.    | Create a GUI to display list of personnels' IPPT result, BMI result, AFR and date taken in visualisation dashboard |
 
 
-2. Ranking exercises
-   - As CO, he would like to have a birds eye view of the entire squadron so that he can better monitor ....
-     - Sprint backlog #1
-     - Sprint backlog #2
-   - As OC, he wouuld like to have a birds eye view of his flight so that he can .....
 
 To do list:
 - Python Script: How to let the connection not stop  when network has error, run a script which continuously scans for it.
