@@ -16,11 +16,13 @@ _As a `<role>`, I want `<capability>` so that `<benefit>`._
 
    As a HR administrator, I want to access the unit’s personnel dates of birth so that the Commanding Officer can prepare the birthday cards to servicemen and servicewomen one month before.
 
-  | S/N   | Sprint backlog                                                           | 
-  |-------|--------------------------------------------------------------------------|
-  | 1.    | Create an entity/database to store personnel's date of birth             |
-  | 2.    | Create a GUI to generate list of personnel in PDF format based on filters|
-
+  | S/N   | Sprint backlog                                                                     | 
+  |-------|------------------------------------------------------------------------------------|
+  | 1.    | Define entity & schema (name, flight, DOB, etc.) to be stored - Database           |
+  | 2.    | Design the UI for the visualization dashboard to display list of filtered personnel|
+  | 3.    | Create a function to filter/sort personnels based on months                        |
+  | 4.    | Create a function to generate the list of personnel in PDF format based on the filter function|
+  
 ## Epic 2 (Award presentations to recognise efforts and contributions to unit)
 
 **User Story 1**
@@ -69,12 +71,12 @@ _As a `<role>`, I want `<capability>` so that `<benefit>`._
 |-------|---------------------------------------------------------------------------|
 | 1.    | Create user groups and roles                                              |
 | 2.    | Draft the policies for CRUD modification by roles and groups              |
-| 3.    | HR administrator should have access to CRUD functions to all personal information              |
-| 4.    | Operators should have access to Read functions to only their personal information to check if its accurate up to date without accessing others' information      |
-| 5.    | Chief Ops should have access to Read and Update functions to Operators personal information to help ammend when any changes happens |  
-| 6.    | OC should have access to Read and Update functions to t personal information        |  
-| 7.    | CO should have the only access to the CEP and AFR records of all personnel so that he can analysis the man's current standing  within unit.        |  
-| 8.    | CO, OC, Chief Ops and selected appointment holders should have access to all CRUD of BB personnels' IPPT & BMI record so that they can keep track of each individual's results and allow the higher ups to better help individual susceptible to failure in advance.          |
+| 3.    | Create [Create, Read, Update, Delete] functions for HR administrator to access to all personal information |
+| 4.    | Create [Read] functions for operators to access only their personal information|
+| 5.    | Create [Read, Update] functions for Chief Ops to modify operators personal information to help ammend when any changes happens |  
+| 6.    | Create [Create,Read,Update,Delete] functions for OC to modify or update personal information        |  
+| 7.    | Create [Create,Read,Update,Delete] functions for CO to access and modify CEP/AFR/PRG records of all personnel  |  
+| 8.    | Create [Create,Read,Update,Delete] functions for selected appointment holders to access personnels' IPPT & BMI record|
 
 ---
 
@@ -89,8 +91,3 @@ _As a `<role>`, I want `<capability>` so that `<benefit>`._
   | 1.    | Create an entity/database to store list of personnels' IPPT result, BMI result, AFR, and date taken                 |             
   | 2.    | Create a GUI to display list of personnels' IPPT result, BMI result, AFR and date taken in visualisation dashboard |
 
-
-
-To do list:
-- Python Script: How to let the connection not stop  when network has error, run a script which continuously scans for it.
-- Documentation for SOP 
