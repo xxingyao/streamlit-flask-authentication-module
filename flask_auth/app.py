@@ -8,12 +8,11 @@ app = Flask(__name__)
 USERS = {
     "alice": {
         "salt": b"fixed-demo-salt-change-me",
-        "hash": bytes.fromhex(
-            "e3c9f5b5756cf9f1e4f59f69e201c6b6c7f5f3d2d5b3513a5f4d2f1a9a1f9d7b"
-        ),
+        "hash": bytes.fromhex("4912b210bcaff3909b93a22e3de1f4c1a4eebe5b30908bc4718952b24465380f"),
         "roles": ["user"],
     }
 }
+
 
 def _hash_pw(pw: str, salt: bytes) -> bytes:
     return hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, 200_000)
