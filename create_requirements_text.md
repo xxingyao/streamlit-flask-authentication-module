@@ -9,7 +9,7 @@ Requirements files do **not** expand `~`, so convert `~/build_pyjwt` to an absol
 
 ```bash
 WHEELDIR="$(cd ~/build_pyjwt && pwd)"
-echo "$WHEELDIR"   # e.g. /home/<you>/build_pyjwt
+echo "$WHEELDIR"   # e.g. /home/jovyan/build_pyjwt
 ```
 
 ---
@@ -17,7 +17,7 @@ echo "$WHEELDIR"   # e.g. /home/<you>/build_pyjwt
 ## 2) Option A — Search your local wheel folder in addition to Nexus (recommended)
 `requirements.txt`:
 ```txt
---find-links file:///home/<you>/build_pyjwt
+--find-links file:///home/jovyan/build_pyjwt
 
 PyJWT==2.9.0
 # others still come from Nexus by default
@@ -34,7 +34,7 @@ python -m pip install -r requirements.txt
 ## 3) Option B — Force this exact local wheel (never pull PyJWT from Nexus)
 `requirements.txt`:
 ```txt
-PyJWT==2.9.0 @ file:///home/<you>/build_pyjwt/PyJWT-2.9.0-py3-none-any.whl
+PyJWT==2.9.0 @ file:///home/jovyan/build_pyjwt/PyJWT-2.9.0-py3-none-any.whl
 pandas==2.2.2
 my-internal-lib==0.6.3
 ```
@@ -49,7 +49,7 @@ python -m pip install -r requirements.txt
 `requirements.txt`:
 ```txt
 --no-index
---find-links file:///home/<you>/build_pyjwt
+--find-links file:///home/jovyan/build_pyjwt
 PyJWT==2.9.0
 ```
 Install:
@@ -73,7 +73,7 @@ PY
 ## 6) Nice-to-haves
 **Integrity lock (hash pin):**
 ```bash
-pip hash /home/<you>/build_pyjwt/PyJWT-2.9.0-py3-none-any.whl
+pip hash /home/jovyan/build_pyjwt/PyJWT-2.9.0-py3-none-any.whl
 ```
 Then in `requirements.txt`:
 ```txt
