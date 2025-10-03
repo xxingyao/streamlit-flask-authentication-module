@@ -1,0 +1,70 @@
+import os
+import streamlit as st
+import urllib.request, urllib.error, json
+
+# Point these to your Flask app (base), configurable via env var for Heroku
+FLASK_BASE = os.environ.get("FLASK_BASE", "http://localhost:5000")
+FLASK_VERIFY = f"{FLASK_BASE}/verify"
+FLASK_LOGOUT = f"{FLASK_BASE}/logout"
+FLASK_LOGIN  = f"{FLASK_BASE}/login"
+
+st.set_page_config(page_title="My Protected App", page_icon="🔐")
+
+def _post_text(url: str, data: str, timeout: float = 3.0):
+    req = urllib.request.Request(
+        url, data=data.encode("utf-8"), method="POST",
+        headers={"Content-Type": "text/plain"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.getcode(), json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        return e.code, {}
+    except Exception:
+        return 0, {}
+
+def require_auth():
+    if st.session_state.get("user") and st.session_state.get("sid"):
+        return
+
+    qp = st.query_params
+    sid = qp.get("sid")
+    if isinstance(sid, list):
+        sid = sid[0]
+
+    if not sid:
+        st.title("🔐 Login required")
+        st.write(f"Please sign in at **{FLASK_LOGIN}**.")
+        st.stop()
+
+    code, payload = _post_text(FLASK_VERIFY, sid)
+    if code != 200 or not payload.get("ok"):
+        st.error("Session invalid or expired. Please log in again.")
+        st.stop()
+
+    st.session_state.sid = sid
+    st.session_state.user = payload["user"]
+    st.session_state.roles = payload.get("roles", [])
+    st.query_params.clear()
+
+def logout_and_redirect():
+    sid = st.session_state.get("sid")
+    if sid:
+        _post_text(FLASK_LOGOUT, sid)
+    st.session_state.clear()
+    st.markdown(
+        f'<meta http-equiv="refresh" content="0; url={FLASK_LOGIN}">',
+        unsafe_allow_html=True
+    )
+    st.stop()
+
+# ---- Gate the app ----
+require_auth()
+
+# ---- Protected UI ----
+st.sidebar.write(f"Signed in as **{st.session_state.user}**")
+if st.sidebar.button("Log out"):
+    logout_and_redirect()
+
+st.title("✅ Protected content")
+st.write("This only renders after successful verification with the Flask gateway.")
