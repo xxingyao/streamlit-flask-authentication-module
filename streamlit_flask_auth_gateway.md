@@ -1,165 +1,192 @@
-# Flask ↔ Streamlit Auth Gateway (stdlib-only)
-
-Protect a Streamlit app behind a simple Flask login **without any extra packages** beyond Flask, Streamlit, and the Python standard library.
-
-**Flow**
-1. User logs in at `http://localhost:5000/login` (Flask).
-2. Flask verifies credentials, creates a server-side session (`sid`), and redirects to `http://localhost:8501/?sid=...` (Streamlit).
-3. Streamlit verifies the `sid` by POSTing it back to Flask (`/verify`) using `urllib.request`.
-4. User clicks **Log out** in Streamlit → Streamlit revokes the session via Flask (`/logout`) and sends the browser back to Flask’s login.
+* Flask issues a random **session id (sid)** after login and keeps it in memory.
+* Streamlit refuses to render unless it can **POST sid back to Flask** for verification.
+* When the user clicks **Logout in Streamlit**, Streamlit **POSTs sid to Flask /logout**, clears its session, and **redirects the browser back to Flask**.
 
 ---
 
-## Repo contents
+# 1) Flask (auth gateway) — `app_auth.py`
 
-- `app_auth.py` — Flask app: login form, in-memory user store (PBKDF2), session issuance, `/verify`, `/logout`.
-- `app_streamlit.py` — Streamlit app: hard gate with `require_auth()`, logout button, redirect back to Flask.
-- *(Optional)* `helpers/` — snippets you may add later (password hash generator, etc.).
-
----
-
-## Prerequisites
-
-- Python 3.8+ recommended
-- Flask and Streamlit installed (no other packages)
-  ```bash
-  pip install flask streamlit
-  ```
-
----
-
-## Quick start
-
-Open two terminals in the project directory.
-
-**Terminal A — Flask**
-```bash
-python app_auth.py
-```
-
-**Terminal B — Streamlit**
-```bash
-streamlit run app_streamlit.py --server.headless=true --server.port=8501
-```
-
-Visit: **`http://localhost:5000/login`**  
-Log in → you’ll be redirected to the protected Streamlit app.
-
----
-
-## Configuration
-
-### Ports & URLs
-- Default Flask: `http://localhost:5000`
-- Default Streamlit: `http://localhost:8501`
-- If you change ports, update the constants at the top of `app_streamlit.py`:
-  ```python
-  FLASK_VERIFY = "http://localhost:5000/verify"
-  FLASK_LOGOUT = "http://localhost:5000/logout"
-  FLASK_LOGIN  = "http://localhost:5000/login"
-  ```
-
-### Session lifetime
-- Sessions expire after **1 hour** by default. Change when creating the session in `app_auth.py`:
-  ```python
-  SESSIONS[sid] = {"sub": u, "roles": USERS[u]["roles"], "exp": time.time() + 3600}
-  ```
-
-### Multipage Streamlit apps
-- Call `require_auth()` at the **top of every page** (import it into each file) to ensure nothing renders without authentication.
-
----
-
-## Adding users (no plaintext passwords)
-
-Users live in the in-memory `USERS` dict inside `app_auth.py`. Each user needs:
-- a unique **salt** (`bytes`)
-- a PBKDF2-HMAC-SHA256 **hash** (hex string)
-- optional **roles** (list)
-
-**Generate a password hash (one-liner in Python):**
 ```python
-import hashlib
-salt = b"my-unique-salt-123"            # choose a unique salt per user
-pw   = b"password123"                   # the user's chosen password
-print(hashlib.pbkdf2_hmac("sha256", pw, salt, 200_000).hex())
-```
+# app_auth.py
+from flask import Flask, request, render_template_string, redirect
+import secrets, time, hashlib, os, hmac
 
-**Add to `USERS`:**
-```python
+app = Flask(__name__)
+
+# ---- Simple user store with salted PBKDF2 hashes (no extra packages) ----
+# Run once to generate a hash for "password123":
+# hashlib.pbkdf2_hmac('sha256', b'password123', salt, 200_000)
 USERS = {
-  "alice": {
-    "salt": b"my-unique-salt-123",
-    "hash": "<hex-from-generator>",
-    "roles": ["user"]  # or ["admin", "user"]
-  }
+    "alice": {
+        "salt": b"fixed-demo-salt-change-me",
+        "hash": bytes.fromhex(
+            "e3c9f5b5756cf9f1e4f59f69e201c6b6c7f5f3d2d5b3513a5f4d2f1a9a1f9d7b"
+        ),  # <- replace with your own
+        "roles": ["user"],
+    }
 }
+def _hash_pw(pw: str, salt: bytes) -> bytes:
+    return hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, 200_000)
+
+def verify_user(username: str, password: str) -> bool:
+    u = USERS.get(username)
+    return bool(u and hmac.compare_digest(_hash_pw(password, u["salt"]), u["hash"]))
+
+# ---- Session store (in-memory) ----
+SESSIONS = {}  # sid -> {"sub": "...", "roles": [...], "exp": <unix>}
+
+LOGIN_HTML = """
+<!doctype html>
+<title>Login</title>
+<h2>Login</h2>
+<form method="post">
+  <label>Username</label><br><input name="username" autofocus><br><br>
+  <label>Password</label><br><input name="password" type="password"><br><br>
+  <button type="submit">Login</button>
+</form>
+"""
+
+@app.route("/", methods=["GET"])
+def index():
+    return redirect("/login", code=302)
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        return render_template_string(LOGIN_HTML)
+
+    u = (request.form.get("username") or "").strip()
+    p = request.form.get("password") or ""
+
+    if not verify_user(u, p):
+        return "Invalid credentials", 401
+
+    sid = secrets.token_urlsafe(32)
+    SESSIONS[sid] = {"sub": u, "roles": USERS[u]["roles"], "exp": time.time() + 3600}
+    # Redirect the browser to Streamlit, carrying the sid once
+    return redirect(f"http://localhost:8501/?sid={sid}", code=302)
+
+@app.route("/verify", methods=["POST"])
+def verify():
+    sid = request.get_data(as_text=True)
+    s = SESSIONS.get(sid)
+    if not s or s["exp"] <= time.time():
+        return {"ok": False}, 401
+    return {"ok": True, "user": s["sub"], "roles": s["roles"]}, 200
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    sid = request.get_data(as_text=True)
+    if sid in SESSIONS:
+        del SESSIONS[sid]
+    return {"ok": True}, 200
+
+if __name__ == "__main__":
+    # Local-only by default; adjust host/port as you need
+    app.run(port=5000, debug=False)
 ```
 
-> Tip: Store users in a file/DB for persistence if you restart the Flask process often.
+> 🔐 Replace the demo password hash with your own. For each real user, generate a unique `salt` and precompute/store the PBKDF2 hash.
 
 ---
 
-## How the guard works (high level)
+# 2) Streamlit (protected app) — `app_streamlit.py`
 
-- **On first load**, Streamlit looks for `sid` in `st.query_params`.
-- If missing → show “Login required” and `st.stop()`.
-- If present → Streamlit **POSTs** the `sid` to Flask `/verify` using `urllib.request`.
-- If valid → bind `user`, `roles`, and `sid` into `st.session_state`, **clear the URL query** (`st.query_params.clear()`), and render the app.
-- **Logout** button calls Flask `/logout` with the `sid`, clears Streamlit session state, and meta-refreshes the browser back to Flask `/login`.
+```python
+# app_streamlit.py
+import streamlit as st
+import urllib.request, urllib.error
+
+FLASK_VERIFY = "http://localhost:5000/verify"
+FLASK_LOGOUT = "http://localhost:5000/logout"
+FLASK_LOGIN  = "http://localhost:5000/login"
+
+st.set_page_config(page_title="My Protected App", page_icon="🔐")
+
+def _post_text(url: str, data: str, timeout: float = 2.0):
+    req = urllib.request.Request(
+        url, data=data.encode("utf-8"), method="POST",
+        headers={"Content-Type": "text/plain"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            import json
+            return resp.getcode(), json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        return e.code, {}
+    except Exception:
+        return 0, {}
+
+def require_auth():
+    # Already authenticated in this Streamlit session?
+    if st.session_state.get("user") and st.session_state.get("sid"):
+        return
+
+    # Get sid from query params on first load
+    qp = st.query_params
+    sid = qp.get("sid")
+    if isinstance(sid, list):
+        sid = sid[0]
+
+    if not sid:
+        st.title("🔐 Login required")
+        st.write(f"Please sign in at **{FLASK_LOGIN}**.")
+        st.stop()
+
+    # Verify with Flask (stdlib urllib only)
+    code, payload = _post_text(FLASK_VERIFY, sid)
+    if code != 200 or not payload.get("ok"):
+        st.error("Session invalid or expired. Please log in again.")
+        st.stop()
+
+    # Bind identity to session and scrub URL
+    st.session_state.sid = sid
+    st.session_state.user = payload["user"]
+    st.session_state.roles = payload.get("roles", [])
+    st.query_params.clear()
+
+def logout_and_redirect():
+    sid = st.session_state.get("sid")
+    if sid:
+        _post_text(FLASK_LOGOUT, sid)  # best-effort revoke
+    st.session_state.clear()
+    # Redirect browser back to Flask login (HTML meta refresh; no extra packages)
+    st.markdown(
+        f'<meta http-equiv="refresh" content="0; url={FLASK_LOGIN}">', 
+        unsafe_allow_html=True
+    )
+    st.stop()
+
+# ---- Gate the app ----
+require_auth()
+
+# ---- UI below is protected ----
+st.sidebar.write(f"Signed in as **{st.session_state.user}**")
+if st.sidebar.button("Log out"):
+    logout_and_redirect()
+
+st.title("✅ Protected content")
+st.write("This only renders after successful verification with the Flask gateway.")
+```
 
 ---
 
-## Security notes (still zero extra packages)
+## How this satisfies your 5 requirements
 
-- **No plaintext passwords**: PBKDF2-HMAC-SHA256 with 200k iterations (adjust as needed).
-- **Per-user salts** are required; never reuse the same salt across all users.
-- **Short session TTL** and revoke on logout.
-- **Scrub query tokens**: we remove `sid` from the URL right after verification (prevents log/history leakage).
-- **Local-only** by default. For intranet/production, front with a reverse proxy (Nginx/Traefik/Apache) and TLS termination.
-- **Least privilege UI**: gate admin functions via the `roles` claim in `st.session_state`.
-
----
-
-## Troubleshooting
-
-- **I can hit `:8501` without logging in.**  
-  Ensure `require_auth()` is called at the *very top* of every Streamlit page before any content or expensive data loads.
-
-- **“Session invalid or expired.”**  
-  The `sid` isn’t in Flask’s memory (expired or Flask restarted). Log in again.
-
-- **CORS issues?**  
-  We post from `http://localhost:8501` to `http://localhost:5000`. Browsers allow this simple POST without custom headers; if you add custom headers, you may need CORS handling.
-
-- **After logout I’m still seeing the app.**  
-  The Streamlit page meta-refreshes back to Flask immediately, but if you navigate back, the guard should block and ask you to log in again.
+1. **Users login from Flask app**: `/login` form validates credentials and creates a server-side session (`sid`).
+2. **Directs to Streamlit app**: Flask redirects to `http://localhost:8501/?sid=...`.
+3. **User logouts from Streamlit app**: Sidebar “Log out” calls Flask `/logout` with `sid` (revokes the session).
+4. **Directs back to Flask**: After logout, Streamlit clears state and issues an immediate HTML meta-refresh to `http://localhost:5000/login`.
+5. **No extra packages**: Only Flask + Streamlit + Python stdlib (`hashlib`, `hmac`, `secrets`, `urllib`) are used.
 
 ---
 
-## FAQ
+## Notes & hardening (still zero extra packages)
 
-**Why not JWT / `itsdangerous`?**  
-To meet a strict “no extra packages” requirement and enable easy server-side session revocation. If you later want stateless tokens, you can switch to HMAC or `itsdangerous` with minimal code changes.
+* **Short session TTL**: Currently 1 hour; tune `exp` as needed.
+* **Per-user salts & strong hashes**: Already using PBKDF2-HMAC-SHA256 with 200k rounds; generate unique salts and store hex hashes.
+* **Lock to localhost** (default) during development; for LAN or prod, consider TLS termination via a reverse proxy (still doesn’t change app code).
+* **Multipage Streamlit**: Put `require_auth()` at the top of **every page** (e.g., import from a shared `auth_guard.py`).
+* **No token leakage**: `sid` is removed from the URL right after first verification (`st.query_params.clear()`).
 
-**Can I avoid the `sid` in the URL altogether?**  
-Use a reverse proxy and set an HTTP-only cookie from Flask, then have Streamlit read/verify it. That’s a small infra change, not a code change in principle.
-
-**Will this work offline?**  
-Yes. No dependency on external services; only Flask ↔ Streamlit over localhost.
-
----
-
-## Next steps (optional enhancements)
-
-- Persist sessions to a file/DB instead of memory.
-- Add “remember me” (longer TTL) vs “strict” (short TTL).
-- Role-based menus and route guards inside Streamlit.
-- Hash & user management CLI script.
-- Proxy + TLS for production environments.
-
----
-
-## License
-
-MIT (sample code). Use at your own risk; review and harden for your environment.
+If you want, tell me your Python version/OS and I’ll give you a tiny helper to generate user salts & password hashes for your `USERS` dict.
