@@ -1,104 +1,100 @@
-from flask import Flask, request, render_template_string, redirect
-import secrets, time, hashlib, hmac, os, json, base64
+import os
+import streamlit as st
+import urllib.request, urllib.error, json
 
-app = Flask(__name__)
+# ----- Config -----
+FLASK_BASE = os.environ.get("FLASK_BASE", "http://localhost:5000")
+FLASK_VERIFY = f"{FLASK_BASE}/verify"
+FLASK_LOGOUT = f"{FLASK_BASE}/logout"
+FLASK_LOGIN  = f"{FLASK_BASE}/login"
 
-# ----- Demo user store (same as before) -----
-USERS = {
-    "alice": {
-        "salt": b"fixed-demo-salt-change-me",
-        "hash": bytes.fromhex("4912b210bcaff3909b93a22e3de1f4c1a4eebe5b30908bc4718952b24465380f"),
-        "roles": ["user"],
-    }
-}
+st.set_page_config(page_title="My Protected App", page_icon="🔐")
 
-def _hash_pw(pw: str, salt: bytes) -> bytes:
-    return hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, 200_000)
-
-def verify_user(username: str, password: str) -> bool:
-    u = USERS.get(username)
-    return bool(u and hmac.compare_digest(_hash_pw(password, u["salt"]), u["hash"]))
-
-# ===== Stateless SID helpers (HMAC-SHA256) =====
-AUTH_SECRET = os.environ.get("AUTH_SECRET", "dev-please-change-me").encode("utf-8")
-
-def _b64u(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
-
-def _b64u_decode(s: str) -> bytes:
-    pad = "=" * ((4 - len(s) % 4) % 4)
-    return base64.urlsafe_b64decode(s + pad)
-
-def _mint_sid(sub: str, roles: list, ttl_seconds: int = 3600) -> str:
-    payload = {"sub": sub, "roles": roles, "exp": int(time.time()) + ttl_seconds}
-    body = _b64u(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-    sig = hmac.new(AUTH_SECRET, body.encode("ascii"), hashlib.sha256).hexdigest()
-    return f"{body}.{sig}"
-
-def _verify_sid(sid: str):
-    # returns (ok: bool, payload: dict|None)
+# ----- Back-compat helpers for query params -----
+def _get_sid_from_url():
+    # Try new API (1.30+)
     try:
-        body, sig = sid.rsplit(".", 1)
-    except ValueError:
-        return False, None
-    good_sig = hmac.new(AUTH_SECRET, body.encode("ascii"), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(sig, good_sig):
-        return False, None
-    try:
-        payload = json.loads(_b64u_decode(body))
+        qp = st.query_params
+        sid = qp.get("sid")
+        if isinstance(sid, list):
+            sid = sid[0]
+        if sid:
+            return sid
     except Exception:
-        return False, None
-    if int(payload.get("exp", 0)) <= int(time.time()):
-        return False, None
-    return True, payload
+        pass
+    # Fallback for older Streamlit
+    try:
+        qp = st.experimental_get_query_params()
+        sid_list = qp.get("sid")
+        return sid_list[0] if sid_list else None
+    except Exception:
+        return None
 
-# ----- HTML + config (same) -----
-LOGIN_HTML = """<!doctype html><title>Login</title>
-<h2>Login</h2>
-<form method="post">
-  <label>Username</label><br><input name="username" autofocus><br><br>
-  <label>Password</label><br><input name="password" type="password"><br><br>
-  <button type="submit">Login</button>
-</form>"""
+def _clear_sid_from_url():
+    try:
+        st.query_params.clear()
+        return
+    except Exception:
+        pass
+    try:
+        st.experimental_set_query_params()
+    except Exception:
+        pass
 
-STREAMLIT_BASE = os.environ.get("STREAMLIT_BASE", "http://localhost:8501")
+# ----- Small HTTP helper -----
+def _post_text(url: str, data: str, timeout: float = 10.0):  # allow longer for cold start
+    req = urllib.request.Request(
+        url, data=data.encode("utf-8"), method="POST",
+        headers={"Content-Type": "text/plain"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.getcode(), json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        return e.code, {}
+    except Exception:
+        return 0, {}
 
-@app.get("/")
-def index():
-    return redirect("/login", code=302)
+# ----- Auth gate -----
+def require_auth():
+    if st.session_state.get("user") and st.session_state.get("sid"):
+        return
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "GET":
-        return render_template_string(LOGIN_HTML)
+    sid = _get_sid_from_url()
 
-    u = (request.form.get("username") or "").strip()
-    p = (request.form.get("password") or "").strip()
+    if not sid:
+        st.title("🔐 Login required")
+        st.write(f"Please sign in at **{FLASK_LOGIN}**.")
+        st.stop()
 
-    if not verify_user(u, p):
-        return "Invalid credentials", 401
+    code, payload = _post_text(FLASK_VERIFY, sid)
+    if code != 200 or not payload.get("ok"):
+        st.error(f"Session invalid or expired. Please log in again. (status={code}, payload={payload})")
+        st.stop()
 
-    roles = USERS[u]["roles"]
-    sid = _mint_sid(u, roles, ttl_seconds=3600)
-    return redirect(f"{STREAMLIT_BASE}/?sid={sid}", code=302)
+    st.session_state.sid = sid
+    st.session_state.user = payload["user"]
+    st.session_state.roles = payload.get("roles", [])
+    _clear_sid_from_url()
 
-@app.post("/verify")
-def verify():
-    sid = request.get_data(as_text=True).strip()
-    ok, payload = _verify_sid(sid)
-    if not ok:
-        return {"ok": False}, 401
-    return {"ok": True, "user": payload["sub"], "roles": payload.get("roles", [])}, 200
+def logout_and_redirect():
+    sid = st.session_state.get("sid")
+    if sid:
+        _post_text(FLASK_LOGOUT, sid)
+    st.session_state.clear()
+    st.markdown(
+        f'<meta http-equiv="refresh" content="0; url={FLASK_LOGIN}">', 
+        unsafe_allow_html=True
+    )
+    st.stop()
 
-@app.post("/logout")
-def logout():
-    # Stateless tokens can't be truly revoked without a denylist/DB; treat as best-effort success.
-    return {"ok": True}, 200
+# ---- Gate the app ----
+require_auth()
 
-# (Optional) healthcheck
-@app.get("/healthz")
-def healthz():
-    return {"ok": True}, 200
+# ---- Protected UI ----
+st.sidebar.write(f"Signed in as **{st.session_state.user}**")
+if st.sidebar.button("Log out"):
+    logout_and_redirect()
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+st.title("✅ Protected content")
+st.write("This only renders after successful verification with the Flask gateway.")
