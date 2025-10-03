@@ -2,7 +2,7 @@ import os
 import streamlit as st
 import urllib.request, urllib.error, json
 
-# Point these to your Flask app (base), configurable via env var for Heroku
+# ----- Config -----
 FLASK_BASE = os.environ.get("FLASK_BASE", "http://localhost:5000")
 FLASK_VERIFY = f"{FLASK_BASE}/verify"
 FLASK_LOGOUT = f"{FLASK_BASE}/logout"
@@ -10,6 +10,41 @@ FLASK_LOGIN  = f"{FLASK_BASE}/login"
 
 st.set_page_config(page_title="My Protected App", page_icon="🔐")
 
+# ----- Back-compat helpers for query params -----
+def _get_sid_from_url():
+    # Try new API (1.30+)
+    try:
+        qp = st.query_params
+        sid = qp.get("sid")
+        # When sid appears multiple times (?sid=a&sid=b), new API may return list-like
+        if isinstance(sid, list):
+            sid = sid[0]
+        if sid:
+            return sid
+    except Exception:
+        pass
+    # Fallback for older Streamlit
+    try:
+        qp = st.experimental_get_query_params()
+        sid_list = qp.get("sid")
+        return sid_list[0] if sid_list else None
+    except Exception:
+        return None
+
+def _clear_sid_from_url():
+    # Try new API
+    try:
+        st.query_params.clear()
+        return
+    except Exception:
+        pass
+    # Fallback for older Streamlit
+    try:
+        st.experimental_set_query_params()
+    except Exception:
+        pass
+
+# ----- Small HTTP helper -----
 def _post_text(url: str, data: str, timeout: float = 3.0):
     req = urllib.request.Request(
         url, data=data.encode("utf-8"), method="POST",
@@ -23,14 +58,12 @@ def _post_text(url: str, data: str, timeout: float = 3.0):
     except Exception:
         return 0, {}
 
+# ----- Auth gate -----
 def require_auth():
     if st.session_state.get("user") and st.session_state.get("sid"):
         return
 
-    qp = st.query_params
-    sid = qp.get("sid")
-    if isinstance(sid, list):
-        sid = sid[0]
+    sid = _get_sid_from_url()
 
     if not sid:
         st.title("🔐 Login required")
@@ -45,7 +78,7 @@ def require_auth():
     st.session_state.sid = sid
     st.session_state.user = payload["user"]
     st.session_state.roles = payload.get("roles", [])
-    st.query_params.clear()
+    _clear_sid_from_url()
 
 def logout_and_redirect():
     sid = st.session_state.get("sid")
@@ -53,7 +86,7 @@ def logout_and_redirect():
         _post_text(FLASK_LOGOUT, sid)
     st.session_state.clear()
     st.markdown(
-        f'<meta http-equiv="refresh" content="0; url={FLASK_LOGIN}">',
+        f'<meta http-equiv="refresh" content="0; url={FLASK_LOGIN}">', 
         unsafe_allow_html=True
     )
     st.stop()
