@@ -93,7 +93,7 @@ _As a `<role>`, I want `<capability>` so that `<benefit>`._
 
 ---
 
-## Epic 6 (User requiement)
+## Epic 6 (User requirement)
 
 **User Story 1***
    As a User, i want to have overall view of my progression since the start of my enlistment date as well as my future courses that i might be going to. With that, i will be able to better position myself when opportunity araise. 
