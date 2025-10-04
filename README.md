@@ -91,3 +91,18 @@ _As a `<role>`, I want `<capability>` so that `<benefit>`._
   | 1.    | Create an entity/database to store list of personnels' IPPT result, BMI result, AFR, and date taken                 |             
   | 2.    | Create a GUI to display list of personnels' IPPT result, BMI result, AFR and date taken in visualisation dashboard |
 
+---
+
+# Epic 6 (User requiement)
+
+**User Story 1***
+   As a User, i want to have overall view of my progression since the start of my enlistment date as well as my future courses that i might be going to. With that, i will be able to better position myself when opportunity araise. 
+
+   | S/N   | Sprint backlog                                                |
+   |-------|--------------------------------------------------------------------------|
+   | 1.    | Create user groups and roles                 |             
+   | 2.    | Draft the policies for CRUD modification by roles and groups |
+   | 3.    | Create [Read] functions for operators to access only their personal information|
+   | 4.    | Create [Create] functions for operators choose the course that want to attend|
+
+
