@@ -10,7 +10,7 @@ _As a `<role>`, I want `<capability>` so that `<benefit>`._
 
 ---
 
-## Epic 1 (Creating birthday cards for the squadron)
+## Epic 1 (Creating birthday cards for the personnel)
 
 **User Story 1**
 
