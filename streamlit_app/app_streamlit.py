@@ -63,8 +63,10 @@ def require_auth():
     sid = _get_sid_from_url()
 
     if not sid:
-        st.title("🔐 Login required")
-        st.write(f"Please sign in at **{FLASK_LOGIN}**.")
+        st.markdown(
+            f'<meta http-equiv="refresh" content="0; url={FLASK_LOGIN}">',
+            unsafe_allow_html=True
+        )
         st.stop()
 
     code, payload = _post_text(FLASK_VERIFY, sid)
@@ -75,7 +77,7 @@ def require_auth():
     st.session_state.sid = sid
     st.session_state.user = payload["user"]
     st.session_state.roles = payload.get("roles", [])
-    _clear_sid_from_url()
+    # Do NOT clear sid from URL, so user stays logged in after refresh
 
 def logout_and_redirect():
     sid = st.session_state.get("sid")
@@ -96,5 +98,8 @@ st.sidebar.write(f"Signed in as **{st.session_state.user}**")
 if st.sidebar.button("Log out"):
     logout_and_redirect()
 
-st.title("✅ Protected content")
-st.write("This only renders after successful verification with the Flask gateway.")
+if st.session_state.user == "admin":
+    st.title("This is Admin Page.")
+else:
+    st.title("✅ Protected content")
+    st.write("This only renders after successful verification with the Flask gateway.")

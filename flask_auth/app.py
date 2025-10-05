@@ -3,14 +3,43 @@ import secrets, time, hashlib, hmac, os, json, base64
 
 app = Flask(__name__)
 
-# ----- Demo user store (same as before) -----
+# ----- Demo user store (now supports registration, in-memory only) -----
 USERS = {
-    "alice": {
+    "admin": {
         "salt": b"fixed-demo-salt-change-me",
+        # hash for 'password123' with the above salt and pbkdf2_hmac sha256, 200_000 iterations
         "hash": bytes.fromhex("4912b210bcaff3909b93a22e3de1f4c1a4eebe5b30908bc4718952b24465380f"),
-        "roles": ["user"],
+        "roles": ["admin"],
     }
 }
+
+REGISTER_HTML = """<!doctype html><title>Register</title>
+<h2>Register</h2>
+<form method="post">
+  <label>Username</label><br><input name="username" autofocus><br><br>
+  <label>Password</label><br><input name="password" type="password"><br><br>
+  <button type="submit">Register</button>
+</form>
+<p>Already have an account? <a href='/login'>Login here</a></p>
+"""
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "GET":
+        return render_template_string(REGISTER_HTML)
+
+    u = (request.form.get("username") or "").strip()
+    p = (request.form.get("password") or "").strip()
+    if not u or not p:
+        return "Username and password required", 400
+    if u in USERS:
+        return "Username already exists", 400
+    salt = secrets.token_bytes(16)
+    USERS[u] = {
+        "salt": salt,
+        "hash": _hash_pw(p, salt),
+        "roles": ["user"],
+    }
+    return redirect("/login", code=302)
 
 def _hash_pw(pw: str, salt: bytes) -> bytes:
     return hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, 200_000)
@@ -50,18 +79,26 @@ def _verify_sid(sid: str):
         return False, None
     if int(payload.get("exp", 0)) <= int(time.time()):
         return False, None
+    # Check sid in session store
+    if sid not in ACTIVE_SESSIONS:
+        return False, None
     return True, payload
 
 # ----- HTML + config (same) -----
 LOGIN_HTML = """<!doctype html><title>Login</title>
 <h2>Login</h2>
 <form method="post">
-  <label>Username</label><br><input name="username" autofocus><br><br>
-  <label>Password</label><br><input name="password" type="password"><br><br>
-  <button type="submit">Login</button>
-</form>"""
+    <label>Username</label><br><input name="username" autofocus><br><br>
+    <label>Password</label><br><input name="password" type="password"><br><br>
+    <button type="submit">Login</button>
+</form>
+<p>Don't have an account? <a href='/register'>Register here</a></p>
+"""
 
 STREAMLIT_BASE = os.environ.get("STREAMLIT_BASE", "http://localhost:8501")
+
+# In-memory session store: sid -> username
+ACTIVE_SESSIONS = {}
 
 @app.get("/")
 def index():
@@ -80,6 +117,8 @@ def login():
 
     roles = USERS[u]["roles"]
     sid = _mint_sid(u, roles, ttl_seconds=3600)
+    # Store sid in session store
+    ACTIVE_SESSIONS[sid] = u
     return redirect(f"{STREAMLIT_BASE}/?sid={sid}", code=302)
 
 @app.post("/verify")
@@ -92,7 +131,10 @@ def verify():
 
 @app.post("/logout")
 def logout():
-    # Stateless tokens can't be truly revoked without a denylist/DB; treat as best-effort success.
+    # Remove sid from session store if present
+    sid = request.get_data(as_text=True).strip()
+    if sid in ACTIVE_SESSIONS:
+        del ACTIVE_SESSIONS[sid]
     return {"ok": True}, 200
 
 # (Optional) healthcheck
